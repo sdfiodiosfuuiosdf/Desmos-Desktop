@@ -16,7 +16,7 @@
   "author": "DingShizhe",
   "license": "MIT",
   "dependencies": {
-    "electron-store": "^2.0.0"
+    "electron-store": "^10.0.0"
   },
   "build": {
     "linux": {
@@ -31,7 +31,7 @@
     }
   },
   "devDependencies": {
-    "electron": "^3.0.6",
-    "electron-builder": "^20.28.4"
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
   }
 }
