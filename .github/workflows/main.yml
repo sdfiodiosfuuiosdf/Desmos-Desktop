@@ -1,0 +1,29 @@
+name: Build Electron App
+
+on:
+  workflow_dispatch:  # 设置为手动触发
+
+jobs:
+  build:
+    runs-on: windows-latest  # 使用 Windows 环境
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2  # 检出项目代码
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3  # 设置 Node.js 环境
+        with:
+          node-version: '23'  # 设置 Node.js 版本
+
+      - name: Install dependencies
+        run: npm install -d # 安装依赖
+
+      - name: Build Electron App
+        run: npm run dist  # 执行 electron-builder 构建 .exe 文件
+
+      - name: Upload Windows .exe as artifact
+        uses: actions/upload-artifact@v3  # 上传构建工件
+        with:
+          name: electron-build  # 设置上传的工件名称
+          path: dist/*.exe  # 指定构建输出目录下的 .exe 文件
