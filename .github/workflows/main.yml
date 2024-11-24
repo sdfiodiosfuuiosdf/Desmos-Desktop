@@ -21,9 +21,13 @@ jobs:
 
       - name: Build Electron App
         run: npm run dist  # 执行 electron-builder 构建 .exe 文件
-
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          
       - name: Upload Windows .exe as artifact
         uses: actions/upload-artifact@v3  # 上传构建工件
         with:
           name: electron-build  # 设置上传的工件名称
           path: dist/*.exe  # 指定构建输出目录下的 .exe 文件
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
