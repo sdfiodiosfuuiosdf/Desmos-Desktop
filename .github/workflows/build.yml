@@ -63,4 +63,3 @@ jobs:
           asset_path: build/
           asset_name: build-artifacts.zip
           asset_content_type: application/zip
-p
