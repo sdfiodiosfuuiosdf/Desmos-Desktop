@@ -78,7 +78,7 @@ jobs:
           body: ${{ github.event.inputs.body }}
           draft: ${{ github.event.inputs.draft }}
           prerelease: ${{ github.event.inputs.prerelease }}
-          artifacts: "artifacts/build-artifacts.zip"
+          artifacts: "${{ steps.download_artifact.outputs.download-path }}"
           token: ${{ secrets.GITHUB_TOKEN }}  # Ensure the correct token is passed
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
