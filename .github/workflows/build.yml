@@ -79,7 +79,7 @@ jobs:
           body: ${{ github.event.inputs.body }}
           draft: ${{ github.event.inputs.draft }}
           prerelease: ${{ github.event.inputs.prerelease }}
-          artifacts: ${{ steps.download-artifact.outputs.download-path }}
+          artifacts: D:\a\Desmos-Desktop\Desmos-Desktop\artifacts\build-artifacts.zip
           token: ${{ secrets.GITHUB_TOKEN }}  # Ensure the correct token is passed
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
