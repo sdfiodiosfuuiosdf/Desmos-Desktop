@@ -1,239 +1,237 @@
-const { ipcRenderer } = require('electron');
-const remote = require("electron").remote;
-var dialog = remote.dialog;
-var fs = require('fs');
+// Import required modules
+import { ipcRenderer } from 'electron';
+import fs from 'fs';
 
 let StateData = {
-    file_path: '',
-    last_state: null
+    filePath: '',
+    lastState: null,
+};
+
+// Helper function: show an alert with CSS animation
+function showAlert(msg) {
+    const container = document.getElementById('container');
+    const alertDiv = document.createElement('div');
+    alertDiv.className = 'floating';
+    alertDiv.id = 'message';
+    alertDiv.textContent = msg;
+
+    container.appendChild(alertDiv);
+
+    setTimeout(() => {
+        alertDiv.style.opacity = 0;
+        alertDiv.addEventListener('transitionend', () => alertDiv.remove());
+    }, 2000);
 }
 
-
-function showAlert(msg, speed=0.02) {
-    var div = '<div class="floating" id="message">'+msg+'</div>';
-    document.getElementById("container").innerHTML = div;
-    var s = document.getElementById('message').style;
-    s.opacity = 1;
-    (function fade(){(s.opacity-=speed)<0?s.display="none":setTimeout(fade,40)})();
-}
-
-
-function set_caculator_state(des_file_data) {
-    state = JSON.parse(des_file_data);
+// Helper function: set calculator state
+function setCalculatorState(desFileData) {
     try {
+        const state = JSON.parse(desFileData);
         calculator.setState(state);
-    }
-    catch(err) {
+    } catch {
         calculator.setBlank();
     }
 }
 
-
-function saveText(text, file){
-    fs.writeFileSync(file, text);
-    showAlert('Saved successfully. ;)');
+// Helper function: save text to a file
+async function saveText(text, filePath) {
+    try {
+        await fs.promises.writeFile(filePath, text);
+        showAlert('Saved successfully. 😉');
+    } catch (err) {
+        showAlert(`Error saving file: ${err.message}`);
+    }
 }
 
+// Update the window title based on the current state
 function setTitle() {
-    if (StateData.file_path)
-        document.title = "Desmos - " + StateData.file_path;
-    else
-        document.title = "Desmos - * Untitled";
-    ipcRenderer.send('renderer-request', {msg: 'TitleChanged', data: StateData.file_path});
+    const title = StateData.filePath
+        ? `Desmos - ${StateData.filePath}`
+        : 'Desmos - * Untitled';
+    document.title = title;
+    ipcRenderer.send('renderer-request', { msg: 'TitleChanged', data: StateData.filePath });
 }
 
-setInterval( function(){
-    if (isSaved()) return;
-    else if (StateData.file_path)
-        document.title = "Desmos - * "+StateData.file_path;
-}, 1000);
+// Check if the state is null
+function isStateNull() {
+    return (
+        StateData.lastState == null &&
+        calculator.getState().expressions.list[0]?.latex === undefined
+    );
+}
 
+// Check if the current state is saved
+function isSaved() {
+    if (isStateNull()) return true;
+    if (!StateData.filePath || !StateData.lastState) return false;
 
-function newFile() {
-    var canceled = !askSaveIfNeed();
+    const currentState = JSON.stringify(calculator.getState().extensions);
+    const lastState = JSON.stringify(StateData.lastState.extensions);
+    return currentState === lastState;
+}
+
+// Prompt the user to save if needed
+async function askSaveIfNeed() {
+    if (isSaved()) return true;
+
+    const { response } = await ipcRenderer.invoke('showMessageBox', {
+        message: 'Do you want to save the current document?',
+        type: 'question',
+        buttons: ['Yes', 'No', 'Cancel'],
+    });
+
+    if (response === 0) await saveFile(); // Yes
+    return response !== 2; // Not Cancel
+}
+
+// Create a new file
+async function newFile() {
+    const canceled = !(await askSaveIfNeed());
     if (canceled) return;
 
     calculator.setBlank();
-    StateData.file_path = '';
+    StateData.filePath = '';
     setTitle();
 }
 
-
-function openFile(filePath=null, init=false) {
-
+// Open an existing file
+async function openFile(filePath = null, init = false) {
     if (!init) {
+        const canceled = !(await askSaveIfNeed());
         if (canceled) return;
-        var canceled = !askSaveIfNeed();
     }
 
-    if (!filePath && init) { return; }
     if (!filePath) {
-        filePaths = dialog.showOpenDialog({filters: [ {name: 'des', extensions: ['des'] }]});
-        if (!filePaths) return;
+        const { filePaths } = await ipcRenderer.invoke('showOpenDialog', {
+            filters: [{ name: 'Desmos Files', extensions: ['des'] }],
+        });
+        if (!filePaths || filePaths.length === 0) return;
         filePath = filePaths[0];
     }
 
-    fs.readFile(filePath, (err, data) => {
-        if(err){
-            showAlert("Error on openning :( " + err.message);
-            calculator.setBlank();
-        }
-        set_caculator_state(data);
-        StateData.file_path = filePath;
-        StateData.last_state = data;
+    try {
+        const data = await fs.promises.readFile(filePath, 'utf-8');
+        setCalculatorState(data);
+        StateData.filePath = filePath;
+        StateData.lastState = data;
         setTitle();
-    });
+    } catch (err) {
+        showAlert(`Error opening file: ${err.message}`);
+        calculator.setBlank();
+    }
 }
 
-
-function saveFile() {
-    if(!StateData.file_path){
-        const file = dialog.showSaveDialog(remote.getCurrentWindow(), {
-            filters: [
-                { name: "Desmos Files", extensions: ['des'] }]
+// Save the current state to a file
+async function saveFile() {
+    if (!StateData.filePath) {
+        const { filePath } = await ipcRenderer.invoke('showSaveDialog', {
+            filters: [{ name: 'Desmos Files', extensions: ['des'] }],
         });
-        if(file) StateData.file_path=file;
+        if (!filePath) return;
+        StateData.filePath = filePath;
     }
-    if(StateData.file_path){
-        var state = calculator.getState();
-        StateData.last_state = state;
-        var state_content = JSON.stringify(state, null, 4);
-        saveText(state_content, StateData.file_path);
-        setTitle();
-    }
+
+    const stateContent = JSON.stringify(calculator.getState(), null, 4);
+    StateData.lastState = calculator.getState();
+    await saveText(stateContent, StateData.filePath);
+    setTitle();
 }
 
-
-function saveAsFile() {
-    const file = dialog.showSaveDialog(remote.getCurrentWindow(), {
-        filters: [
-        { name: "Desmos Files", extensions: ['des'] }]
+// Save as a new file
+async function saveAsFile() {
+    const { filePath } = await ipcRenderer.invoke('showSaveDialog', {
+        filters: [{ name: 'Desmos Files', extensions: ['des'] }],
     });
-    if(file) StateData.file_path=file;
-    if(StateData.file_path){
-        var state = calculator.getState();
-        StateData.last_state = state;
-        var state_content = JSON.stringify(state, null, 4);
-        saveText(state_content, StateData.file_path);
-        setTitle();
-    }
+    if (!filePath) return;
+
+    StateData.filePath = filePath;
+    const stateContent = JSON.stringify(calculator.getState(), null, 4);
+    StateData.lastState = calculator.getState();
+    await saveText(stateContent, StateData.filePath);
+    setTitle();
 }
 
-
-function exportImage() {
-    var image = calculator.screenshot({
-        width: remote.width,
-        height: remote.height,
-        targetPixelRatio: 2
+// Export the current graph as an image
+async function exportImage() {
+    const image = calculator.screenshot({
+        width: window.innerWidth,
+        height: window.innerHeight,
+        targetPixelRatio: 2,
     });
-    
-    var image_data = image.replace(/^data:image\/png;base64,/, "");
 
-    dialog.showSaveDialog({filters: [ {name: 'png', extensions: ['png'] }]},
-        (fileName) => {
-        if (fileName === undefined){
-            console.log("You didn't open the file.");
-            return;
-        }
-        // fileName is a string that contains the path and filename created in the save file dialog.
-        fs.writeFile(fileName, image_data, 'base64', (err) => {
-            if(err){
-                alert("An error ocurred creating the file. :( "+ err.message)
-            }
-            showAlert("Succesfully exported. ;)");
-        });
-    }); 
-}
+    const imageData = image.replace(/^data:image\/png;base64,/, '');
 
-
-function isStateNull() {
-    if (StateData.last_state == null && calculator.getState().expressions.list[0].latex === undefined)
-        return true;
-    else return false;
-}
-
-
-function isSaved() {
-    if (isStateNull()) return true;
-    if (StateData.file_path == "" || StateData.last_state == null)
-        return false;
-    else {
-        if (JSON.stringify(calculator.getState().extensions) == JSON.stringify(StateData.last_state.extensions))
-            return true;
-        else
-            return false;
-    }
-}
-
-
-function askSaveIfNeed(){
-    if(isSaved()) return true;
-    const response = dialog.showMessageBox(remote.getCurrentWindow(), {
-        message: 'Do you want to save the current document?',
-        type: 'question',
-        buttons: [ 'Yes', 'No', 'Cancel' ]
+    const { filePath } = await ipcRenderer.invoke('showSaveDialog', {
+        filters: [{ name: 'Images', extensions: ['png'] }],
     });
-    // Yes to save
-    if (response == 0)
-        saveFile();
+    if (!filePath) return;
 
-    if (response == 2)
-        return false;
-    else
-        return true;
-}
-
-
-
-function exitApp() {
-    var exit = askSaveIfNeed();    
-    if (exit) {
-        showAlert('Exiting...', 0);
-        setTimeout(()=>{
-            ipcRenderer.sendSync('renderer-response', {msg: 'Exit'});
-        }, 600);
+    try {
+        await fs.promises.writeFile(filePath, imageData, 'base64');
+        showAlert('Successfully exported. 😉');
+    } catch (err) {
+        showAlert(`Error exporting image: ${err.message}`);
     }
 }
 
+// Exit the application
+async function exitApp() {
+    const shouldExit = await askSaveIfNeed();
+    if (shouldExit) {
+        showAlert('Exiting...', 0.02);
+        setTimeout(() => ipcRenderer.send('app-quit'), 600);
+    }
+}
 
+// Handle IPC messages from the main process
 ipcRenderer.on('mainprocess-request', (event, arg) => {
-    console.log(arg);
     switch (arg.msg) {
-        case 'NewFile':     newFile();      break;
-        case 'Init':        openFile(arg.data, true);     break;
-        case 'OpenFile':    openFile();     break;
-        case 'SaveFile':    saveFile();     break;
-        case 'SaveAsFile':  saveAsFile();   break;
-        case 'ExportImage': exportImage();  break;
-        case 'Undo':        calculator.undo();      break;
-        case 'Redo':        calculator.redo();      break;
-        case 'Clear':       calculator.setBlank();  break;
-        case 'Exitting':    exitApp();      break;
-        default:            break;
-    }
-});
-
-
-document.addEventListener("keydown", event => {
-    switch (event.key) {
-        case "Escape":
-            if (remote.getCurrentWindow().isFullScreen()) {
-                remote.getCurrentWindow().setFullScreen(false);
-            } else {
-                remote.getCurrentWindow().close();
-            }
+        case 'NewFile':
+            newFile();
+            break;
+        case 'Init':
+            openFile(arg.data, true);
+            break;
+        case 'OpenFile':
+            openFile();
+            break;
+        case 'SaveFile':
+            saveFile();
+            break;
+        case 'SaveAsFile':
+            saveAsFile();
+            break;
+        case 'ExportImage':
+            exportImage();
+            break;
+        case 'Undo':
+            calculator.undo();
+            break;
+        case 'Redo':
+            calculator.redo();
+            break;
+        case 'Clear':
+            calculator.setBlank();
+            break;
+        case 'Exitting':
+            exitApp();
+            break;
+        default:
             break;
     }
 });
 
-ipcRenderer.send('renderer-request', {msg: 'ToInit'})
+// Handle the Escape key for exiting fullscreen or closing the window
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+        const currentWindow = require('@electron/remote').getCurrentWindow();
+        if (currentWindow.isFullScreen()) {
+            currentWindow.setFullScreen(false);
+        } else {
+            currentWindow.close();
+        }
+    }
+});
 
-
-// document.ondragover = document.ondrop = (ev) => {
-    // ev.preventDefault()
-// }
-  
-// document.body.ondrop = (ev) => {
-//     console.log(ev.dataTransfer.files[0].path)
-//     ev.preventDefault()
-// }
+// Notify the main process for initialization
+ipcRenderer.send('renderer-request', { msg: 'ToInit' });
